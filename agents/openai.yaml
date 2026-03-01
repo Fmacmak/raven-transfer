@@ -1,0 +1,4 @@
+interface:
+  display_name: "Raven NGN Transfers"
+  short_description: "Wallet-checked NGN bank and merchant payouts"
+  default_prompt: "Use $raven-transfer to check wallet balance, resolve recipient account details, and execute a confirmed NGN transfer."
