@@ -1,6 +1,6 @@
 # Workflow
 
-Follow this sequence for every payout request.
+Follow this exact sequence for every payout.
 
 ## 1) Collect transfer intent
 
@@ -8,13 +8,14 @@ Capture:
 
 - target type: `bank` or `merchant`
 - amount (NGN)
-- bank name (and bank code if already known)
+- expected fee estimate (NGN)
+- bank name and optional bank code
 - account number
-- narration or payment reason
+- narration
+- merchant name (for merchant payouts)
+- optional caller-supplied merchant reference
 
-For `merchant`, capture merchant name as well.
-
-## 2) Confirm funds first
+## 2) Validate wallet funds
 
 Run:
 
@@ -22,57 +23,71 @@ Run:
 node ./scripts/raven-transfer.mjs --cmd=balance
 ```
 
-If reported balance is below requested amount, stop and ask the user to fund wallet.
+Confirm `available_balance` covers `amount + expected_fee`.
 
 ## 3) Resolve recipient identity
 
-If bank code is unknown, search for it:
+If bank code/name is unknown, search:
 
 ```bash
 node ./scripts/raven-transfer.mjs --cmd=banks --search="GTBank"
 ```
 
-Resolve account name:
+Resolve account holder:
 
 ```bash
-node ./scripts/raven-transfer.mjs --cmd=lookup --bank_code=058 --account_number=0690000031
+node ./scripts/raven-transfer.mjs --cmd=lookup --account_number=0690000031 --bank_code=058
 ```
 
-## 4) Present confirmation message
+## 4) Request confirmation token
 
-Use this exact pattern:
+Run transfer command without `--confirm`.
 
-"About to send NGN <amount> to <account_name> (<account_number>, <bank_name>)<merchant_clause>. Narration: <narration>. Confirm?"
-
-Where `<merchant_clause>` is:
-
-- empty for bank payouts
-- ` for merchant <merchant_name>` for merchant payouts
-
-Proceed only on explicit confirmation.
-
-## 5) Execute transfer
-
-Bank:
+Example:
 
 ```bash
-node ./scripts/raven-transfer.mjs --cmd=transfer --amount=5000 --bank_code=058 --bank="GTBank" --account_number=0690000031 --account_name="John Doe" --narration="Invoice 182"
+node ./scripts/raven-transfer.mjs --cmd=transfer --amount=5000 --bank="GTBank" --bank_code=058 --account_number=0690000031 --account_name="John Doe" --expected_fee=50 --merchant_ref="INV-182"
 ```
 
-Merchant:
+The script returns:
+
+- `status=requires_confirmation`
+- `confirmation_token`
+- echo of recipient, amount, fee, total debit, projected post-balance
+
+## 5) Execute transfer once
+
+Submit with the exact confirmation token:
 
 ```bash
-node ./scripts/raven-transfer.mjs --cmd=transfer-merchant --merchant="Acme Stores" --amount=5000 --bank_code=058 --bank="GTBank" --account_number=0690000031 --account_name="Acme Stores Ltd" --narration="Merchant settlement"
+node ./scripts/raven-transfer.mjs --cmd=transfer --amount=5000 --bank="GTBank" --bank_code=058 --account_number=0690000031 --account_name="John Doe" --expected_fee=50 --merchant_ref="INV-182" --confirm="CONFIRM TXN_..."
 ```
 
-## 6) Return structured completion
+Use the same pattern for `transfer-merchant` with `--merchant`.
 
-Report:
+## 6) Report outcome
+
+Always report:
 
 - `trx_ref`
-- `amount`
+- `merchant_ref`
 - `fee`
+- `total_debit`
 - `status`
-- `created_at`
+- `raw_status`
 
-If status is `pending`, tell the user settlement is asynchronous.
+If `status=pending`, include settlement guidance and avoid duplicate send.
+
+## 7) Re-check settlement status
+
+Before concluding reconciliation (or before any resend decision), fetch current transfer state:
+
+```bash
+node ./scripts/raven-transfer.mjs --cmd=transfer-status --trx_ref=<trx_ref>
+```
+
+If status returns `reversed`:
+
+- stop any automatic resend
+- notify user that the transfer reversed
+- create a fresh transfer only after explicit user approval

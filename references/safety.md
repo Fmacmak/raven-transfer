@@ -3,43 +3,53 @@
 ## Required controls
 
 - Always run `balance` before transfer.
-- Always resolve recipient account with `lookup` before transfer.
-- Always request explicit user confirmation.
-- Never execute duplicate transfers from uncertain user replies.
-
-## Error handling
-
-When command returns `ok: false`:
-
-1. Show the error message to the user.
-2. Include useful context (missing flags, API error, account lookup failure).
-3. Ask whether the user wants to retry.
-
-Do not retry automatically.
+- Always run `lookup` to resolve account name.
+- Always require confirmation token flow before submit.
+- Always perform pre-transfer check `available_balance >= amount + expected_fee`.
+- Always use idempotency reference (`merchant_ref`) and duplicate-intent checks.
+- Always run `transfer-status` for settlement verification before any resend decision.
 
 ## Retry policy
 
-Safe automatic retries:
+Automatic retries are allowed only for read operations:
 
 - `balance`
 - `banks`
 - `lookup`
 
-Do not automatically retry:
+Transfer operations must never auto-retry:
 
 - `transfer`
 - `transfer-merchant`
 
-Transfer retries require user confirmation to prevent duplicates.
+If transfer fails, return actionable guidance and require fresh user confirmation.
 
-## Amount validation
+## Idempotency policy
 
-Reject if:
+- Support caller-supplied `merchant_ref`.
+- Reject duplicate `merchant_ref` values from local transfer state.
+- Persist recent refs and intent hashes in `scripts/.state/transfer-state.json`.
+- Reject repeated intent hashes with in-flight/successful statuses to prevent accidental double-send.
 
-- amount is missing
-- amount is not numeric
-- amount is less than or equal to zero
+## Failure handling
 
-## Idempotency note
+When `ok=false`:
 
-Each transfer call creates a generated reference. If there is uncertainty after submission, do not submit again immediately. Ask for user approval before any second attempt.
+1. Show the `error` value.
+2. Show `raw.retry_guidance`.
+3. Ask user whether to retry read command or re-confirm transfer.
+
+## Pending settlement guidance
+
+If result status is `pending`, treat payout as submitted but not settled.
+
+- Do not send again immediately.
+- Verify settlement state via transfer reference before any retry.
+
+## Reversal handling
+
+If `transfer-status` returns `status=reversed`:
+
+1. Treat payout as reversed.
+2. Do not auto-resend.
+3. Ask user for explicit approval before any new transfer.

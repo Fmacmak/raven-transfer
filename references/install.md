@@ -6,6 +6,7 @@ Install this as a folder named `raven-transfer` that contains:
 - `agents/openai.yaml`
 - `scripts/raven-transfer.mjs`
 - `references/*.md`
+- `tests/*.test.mjs`
 
 ## Codex-style install
 
@@ -31,13 +32,19 @@ Requirements:
 - Node.js 18+ runtime
 - `RAVEN_API_KEY` exposed to the process running commands
 
-## Post-install smoke checks
+## Post-install checks
 
 Run from the skill folder:
 
 ```bash
 node ./scripts/raven-transfer.mjs --help
-node ./scripts/raven-transfer.mjs --cmd=balance
+node --test ./tests/unit-normalizers.test.mjs
+node --test ./tests/contract-live.test.mjs
 ```
 
-If `balance` fails with auth error, verify `RAVEN_API_KEY` is present in the command environment.
+Live contract tests are gated and skipped by default. To run them, set:
+
+- `RAVEN_CONTRACT_TESTS=1`
+- `RAVEN_TEST_ACCOUNT_NUMBER` and `RAVEN_TEST_BANK` (or `RAVEN_TEST_BANK_CODE`) for lookup contract tests
+
+The transfer create contract test is intentionally hard-gated to avoid accidental money movement.
