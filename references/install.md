@@ -31,6 +31,14 @@ Requirements:
 
 - Node.js 18+ runtime
 - `RAVEN_API_KEY` exposed to the process running commands
+- Optional:
+  - `RAVEN_API_BASE`, `RAVEN_TIMEOUT_MS`, `RAVEN_READ_RETRIES`, `RAVEN_RETRY_DELAY_MS`
+  - `RAVEN_DISABLE_LOCAL_STATE=1` to disable local state persistence
+
+Security notes:
+
+- Local idempotency state is written to `scripts/.state/transfer-state.json` with owner-only permissions.
+- Add `scripts/.state/` to ignore/sync exclusions so runtime transfer metadata is not committed or backed up unintentionally.
 
 ## Post-install checks
 

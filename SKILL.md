@@ -22,6 +22,18 @@ Do not skip confirmation token checks. Do not auto-retry transfer submission.
 
 - `RAVEN_API_KEY` must be available in the runtime environment.
 - Ensure the host agent exposes this variable when running commands.
+- Optional runtime overrides:
+  - `RAVEN_API_BASE` (default: `https://integrations.getravenbank.com/v1`)
+  - `RAVEN_TIMEOUT_MS` (default: `30000`)
+  - `RAVEN_READ_RETRIES` (default: `2`)
+  - `RAVEN_RETRY_DELAY_MS` (default: `300`)
+- Optional safety hardening:
+  - `RAVEN_DISABLE_LOCAL_STATE=1` disables on-disk transfer state.
+
+## Invocation policy
+
+- Implicit model invocation should be disabled for this skill.
+- Invoke explicitly with `$raven-transfer` when a transfer workflow is required.
 
 ## Run commands
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -13,6 +13,9 @@ const RETRY_BASE_DELAY_MS = Number(process.env.RAVEN_RETRY_DELAY_MS || "300");
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(SCRIPT_DIR, ".state", "transfer-state.json");
 const MAX_STATE_ENTRIES = 500;
+const STATE_DIR_MODE = 0o700;
+const STATE_FILE_MODE = 0o600;
+const LOCAL_STATE_DISABLED = process.env.RAVEN_DISABLE_LOCAL_STATE === "1";
 
 function ok(data) {
   console.log(JSON.stringify({ ok: true, ...data }));
@@ -216,8 +219,8 @@ function asWalletList(balancePayload) {
 
 function normalizeWallet(wallet) {
   const currency = `${wallet?.currency ?? wallet?.wallet_currency ?? ""}`.toUpperCase();
-  const balance = asNumber(wallet?.balance ?? wallet?.ledger_balance ?? wallet?.available_balance);
-  const availableBalance = asNumber(wallet?.available_balance ?? wallet?.available ?? wallet?.balance);
+  const balance = asNumber(wallet?.balance ?? wallet?.ledger_balance ?? wallet?.ledger_bal ?? wallet?.available_balance ?? wallet?.available_bal);
+  const availableBalance = asNumber(wallet?.available_balance ?? wallet?.available_bal ?? wallet?.available ?? wallet?.balance ?? wallet?.ledger_balance ?? wallet?.ledger_bal);
 
   return {
     currency,
@@ -296,11 +299,12 @@ function defaultNarration(values, beneficiaryType) {
 }
 
 function sanitizeRef(raw) {
-  if (!raw || !raw.trim()) {
+  if (raw === undefined || raw === null) {
     return null;
   }
 
-  return raw.trim();
+  const value = `${raw}`.trim();
+  return value ? value : null;
 }
 
 function makeMerchantRef(raw) {
@@ -312,17 +316,101 @@ function makeMerchantRef(raw) {
   return `MREF_${Date.now()}_${randomBytes(3).toString("hex").toUpperCase()}`;
 }
 
+function compactDefined(object) {
+  return Object.fromEntries(
+    Object.entries(object).filter(([, value]) => value !== undefined && value !== null),
+  );
+}
+
+function sanitizeText(value) {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  const text = `${value}`.trim();
+  return text ? text : undefined;
+}
+
+function sanitizeNumber(value) {
+  const number = asNumber(value);
+  return number === null ? undefined : number;
+}
+
+function sanitizeRefStateRecord(record, fallbackMerchantRef) {
+  const merchantRef = sanitizeRef(record?.merchant_ref ?? fallbackMerchantRef);
+  if (!merchantRef) {
+    return null;
+  }
+
+  return compactDefined({
+    merchant_ref: merchantRef,
+    trx_ref: sanitizeRef(record?.trx_ref ?? record?.transfer_ref ?? record?.reference),
+    status: sanitizeText(record?.status),
+    raw_status: sanitizeText(record?.raw_status),
+    amount: sanitizeNumber(record?.amount),
+    fee: sanitizeNumber(record?.fee),
+    created_at: sanitizeText(record?.created_at),
+    updated_at: sanitizeText(record?.updated_at),
+    intent_hash: sanitizeText(record?.intent_hash),
+  });
+}
+
+function sanitizeIntentStateRecord(record, fallbackIntentHash) {
+  const intentHash = sanitizeText(record?.intent_hash ?? fallbackIntentHash);
+  if (!intentHash) {
+    return null;
+  }
+
+  return compactDefined({
+    intent_hash: intentHash,
+    merchant_ref: sanitizeRef(record?.merchant_ref),
+    trx_ref: sanitizeRef(record?.trx_ref ?? record?.transfer_ref ?? record?.reference),
+    status: sanitizeText(record?.status),
+    raw_status: sanitizeText(record?.raw_status),
+    amount: sanitizeNumber(record?.amount),
+    fee: sanitizeNumber(record?.fee),
+    updated_at: sanitizeText(record?.updated_at),
+  });
+}
+
+export function sanitizeTransferStateSnapshot(rawState) {
+  const refs = {};
+  const intents = {};
+
+  const rawRefs = rawState?.refs && typeof rawState.refs === "object" ? rawState.refs : {};
+  for (const [refKey, rawRecord] of Object.entries(rawRefs)) {
+    const record = sanitizeRefStateRecord(rawRecord, refKey);
+    if (record) {
+      refs[record.merchant_ref] = record;
+    }
+  }
+
+  const rawIntents = rawState?.intents && typeof rawState.intents === "object" ? rawState.intents : {};
+  for (const [intentKey, rawRecord] of Object.entries(rawIntents)) {
+    const record = sanitizeIntentStateRecord(rawRecord, intentKey);
+    if (record) {
+      intents[record.intent_hash] = record;
+    }
+  }
+
+  return {
+    refs: pruneToLimit(refs),
+    intents: pruneToLimit(intents),
+  };
+}
+
 function readTransferState() {
+  if (LOCAL_STATE_DISABLED) {
+    return { refs: {}, intents: {} };
+  }
+
   if (!existsSync(STATE_FILE)) {
     return { refs: {}, intents: {} };
   }
 
   try {
     const raw = JSON.parse(readFileSync(STATE_FILE, "utf8"));
-    return {
-      refs: raw?.refs && typeof raw.refs === "object" ? raw.refs : {},
-      intents: raw?.intents && typeof raw.intents === "object" ? raw.intents : {},
-    };
+    return sanitizeTransferStateSnapshot(raw);
   } catch {
     return { refs: {}, intents: {} };
   }
@@ -345,15 +433,25 @@ function pruneToLimit(recordMap) {
 }
 
 function writeTransferState(state) {
+  if (LOCAL_STATE_DISABLED) {
+    return;
+  }
+
   const dir = dirname(STATE_FILE);
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: STATE_DIR_MODE });
+  try {
+    chmodSync(dir, STATE_DIR_MODE);
+  } catch {
+    // Best effort only. Continue if chmod is not supported.
+  }
 
-  const normalized = {
-    refs: pruneToLimit(state.refs || {}),
-    intents: pruneToLimit(state.intents || {}),
-  };
-
-  writeFileSync(STATE_FILE, JSON.stringify(normalized, null, 2));
+  const normalized = sanitizeTransferStateSnapshot(state);
+  writeFileSync(STATE_FILE, JSON.stringify(normalized, null, 2), { mode: STATE_FILE_MODE });
+  try {
+    chmodSync(STATE_FILE, STATE_FILE_MODE);
+  } catch {
+    // Best effort only. Continue if chmod is not supported.
+  }
 }
 
 export function normalizeTransferStatus(rawStatus) {
@@ -572,14 +670,16 @@ async function cmdLookup(values) {
     });
 
     const data = response?.data ?? response;
+    const resolvedName = typeof data === "string" ? data : data?.account_name;
+    const resolvedAccountNumber = typeof data === "string" ? values.account_number : data?.account_number ?? values.account_number;
     ok({
       status: "resolved",
       raw_status: `${response?.status || "ok"}`,
       available_balance: null,
       fee: 0,
       total_debit: 0,
-      account_name: data?.account_name,
-      account_number: data?.account_number ?? values.account_number,
+      account_name: resolvedName,
+      account_number: resolvedAccountNumber,
       bank: values.bank || values.bank_code,
     });
   } catch (error) {
@@ -681,17 +781,23 @@ function findRefByTrxRef(state, trxRef) {
 }
 
 function upsertRefRecord(state, refKey, patch) {
-  if (!refKey) {
+  const safeRefKey = sanitizeRef(refKey);
+  if (!safeRefKey) {
     return;
   }
 
-  const existing = state.refs[refKey] || {};
-  state.refs[refKey] = {
+  const existing = state.refs[safeRefKey] || {};
+  const next = sanitizeRefStateRecord({
     ...existing,
     ...patch,
-    merchant_ref: refKey,
+    merchant_ref: safeRefKey,
+    created_at: existing.created_at || patch?.created_at,
     updated_at: new Date().toISOString(),
-  };
+  }, safeRefKey);
+
+  if (next) {
+    state.refs[safeRefKey] = next;
+  }
 }
 
 function syncStatusToState(state, transferStatus, providedMerchantRef) {
@@ -709,7 +815,7 @@ function syncStatusToState(state, transferStatus, providedMerchantRef) {
   const intentHash = state.refs[merchantRef]?.intent_hash;
   if (intentHash) {
     const existingIntent = state.intents[intentHash] || {};
-    state.intents[intentHash] = {
+    const nextIntent = sanitizeIntentStateRecord({
       ...existingIntent,
       intent_hash: intentHash,
       merchant_ref: merchantRef,
@@ -719,7 +825,11 @@ function syncStatusToState(state, transferStatus, providedMerchantRef) {
       amount: transferStatus.amount ?? existingIntent.amount,
       fee: transferStatus.fee ?? existingIntent.fee,
       updated_at: new Date().toISOString(),
-    };
+    }, intentHash);
+
+    if (nextIntent) {
+      state.intents[intentHash] = nextIntent;
+    }
   }
 }
 

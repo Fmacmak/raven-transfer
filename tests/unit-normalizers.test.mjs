@@ -8,6 +8,7 @@ import {
   normalizeTransferLookupResponse,
   normalizeTransferStatus,
   normalizeWalletBalanceResponse,
+  sanitizeTransferStateSnapshot,
 } from "../scripts/raven-transfer.mjs";
 
 test("normalizeWalletBalanceResponse handles wallet array payload", () => {
@@ -99,4 +100,55 @@ test("normalizeTransferLookupResponse honors reversal flag", () => {
 
   const out = normalizeTransferLookupResponse(input);
   assert.equal(out.status, "reversed");
+});
+
+test("sanitizeTransferStateSnapshot strips account PII and payload fields", () => {
+  const state = {
+    refs: {
+      "INV-100": {
+        merchant_ref: "INV-100",
+        trx_ref: "rav_100",
+        status: "pending",
+        raw_status: "pending",
+        amount: 1000,
+        fee: 10,
+        account_name: "Jane Doe",
+        account_number: "0123456789",
+        bank: "058",
+        payload: { secret: true },
+      },
+    },
+    intents: {
+      abc123: {
+        intent_hash: "abc123",
+        merchant_ref: "INV-100",
+        trx_ref: "rav_100",
+        status: "pending",
+        raw_status: "pending",
+        amount: 1000,
+        fee: 10,
+        account_name: "Jane Doe",
+        payload: { secret: true },
+      },
+    },
+  };
+
+  const out = sanitizeTransferStateSnapshot(state);
+  assert.deepEqual(out.refs["INV-100"], {
+    merchant_ref: "INV-100",
+    trx_ref: "rav_100",
+    status: "pending",
+    raw_status: "pending",
+    amount: 1000,
+    fee: 10,
+  });
+  assert.deepEqual(out.intents.abc123, {
+    intent_hash: "abc123",
+    merchant_ref: "INV-100",
+    trx_ref: "rav_100",
+    status: "pending",
+    raw_status: "pending",
+    amount: 1000,
+    fee: 10,
+  });
 });
