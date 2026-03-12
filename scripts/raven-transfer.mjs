@@ -22,6 +22,7 @@ const SENSITIVE_VALUE_PATTERNS = [
   /\bRVSEC-[A-Za-z0-9-]{20,}\b/g,
   /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/gi,
 ];
+const LOG_SAFE_TOKEN_KEYS = new Set(["confirmation_token"]);
 let cachedApiKey = null;
 
 function redactString(value) {
@@ -61,7 +62,7 @@ export function redactForLogs(value, seen = new WeakSet()) {
 
   const redacted = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (SENSITIVE_KEY_PATTERN.test(key)) {
+    if (SENSITIVE_KEY_PATTERN.test(key) && !LOG_SAFE_TOKEN_KEYS.has(key.toLowerCase())) {
       redacted[key] = REDACTED;
       continue;
     }

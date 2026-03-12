@@ -17,6 +17,7 @@ Execute safe NGN payouts through Raven Atlas.
 6. Report normalized result fields (`available_balance`, `fee`, `total_debit`, `status`, `raw_status`).
 
 Do not skip confirmation token checks. Do not auto-retry transfer submission.
+Failed transfer note: yes, a failed Raven transfer is typically auto-reversed/refunded after a few minutes; wait, then re-check `transfer-status` and wallet balance before any retry.
 
 ## Required environment
 

@@ -199,6 +199,7 @@ test("redactForLogs redacts secret fields and token-like values", () => {
   const out = redactForLogs({
     Authorization: "Bearer abcdefghijklmnopqrstuvwxyz123456",
     RAVEN_API_KEY: "RVSEC-cc9ca22d8d76d8ef7f84a353592b4f0525cd7e4aa8caf9bfb2d884da35d8fbcec8825fb8e6957cc4eb5a95ceca769ff3",
+    confirmation_token: "CONFIRM TXN_ABC123DEF456",
     nested: {
       error: "upstream returned RVSEC-12345678901234567890",
     },
@@ -206,5 +207,6 @@ test("redactForLogs redacts secret fields and token-like values", () => {
 
   assert.equal(out.Authorization, "[REDACTED]");
   assert.equal(out.RAVEN_API_KEY, "[REDACTED]");
+  assert.equal(out.confirmation_token, "CONFIRM TXN_ABC123DEF456");
   assert.equal(out.nested.error, "upstream returned [REDACTED]");
 });
