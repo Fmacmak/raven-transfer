@@ -3,7 +3,7 @@
 ## Common
 
 - Script: `node ./scripts/raven-transfer.mjs`
-- Auth env var: `RAVEN_API_KEY`
+- Auth source: one of `RAVEN_API_KEY_FILE` (preferred) or `RAVEN_API_KEY`
 - Optional hardening env var: `RAVEN_DISABLE_LOCAL_STATE=1`
 - Output format: JSON object
 

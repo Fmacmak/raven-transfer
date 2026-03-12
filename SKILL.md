@@ -17,11 +17,13 @@ Execute safe NGN payouts through Raven Atlas.
 6. Report normalized result fields (`available_balance`, `fee`, `total_debit`, `status`, `raw_status`).
 
 Do not skip confirmation token checks. Do not auto-retry transfer submission.
+Failed transfer note: yes, a failed Raven transfer is typically auto-reversed/refunded after a few minutes; wait, then re-check `transfer-status` and wallet balance before any retry.
 
 ## Required environment
 
-- `RAVEN_API_KEY` must be available in the runtime environment.
-- Ensure the host agent exposes this variable when running commands.
+- One auth source must be available in the runtime environment:
+  - `RAVEN_API_KEY_FILE` (preferred, points to a `chmod 600`/`chmod 400` file)
+  - `RAVEN_API_KEY`
 - Optional runtime overrides:
   - `RAVEN_API_BASE` (default: `https://integrations.getravenbank.com/v1`)
   - `RAVEN_TIMEOUT_MS` (default: `30000`)
