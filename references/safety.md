@@ -8,6 +8,7 @@
 - Always perform pre-transfer check `available_balance >= amount + expected_fee`.
 - Always use idempotency reference (`merchant_ref`) and duplicate-intent checks.
 - Always run `transfer-status` for settlement verification before any resend decision.
+- Never print raw secrets in command output; redact token-like values and sensitive keys.
 
 ## Retry policy
 

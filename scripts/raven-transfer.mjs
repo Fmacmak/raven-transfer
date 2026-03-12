@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -16,13 +16,66 @@ const MAX_STATE_ENTRIES = 500;
 const STATE_DIR_MODE = 0o700;
 const STATE_FILE_MODE = 0o600;
 const LOCAL_STATE_DISABLED = process.env.RAVEN_DISABLE_LOCAL_STATE === "1";
+const REDACTED = "[REDACTED]";
+const SENSITIVE_KEY_PATTERN = /(?:^|_|-)(?:authorization|api(?:_|-)?key|token|secret|password|cookie)(?:$|_|-)/i;
+const SENSITIVE_VALUE_PATTERNS = [
+  /\bRVSEC-[A-Za-z0-9-]{20,}\b/g,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/gi,
+];
+let cachedApiKey = null;
+
+function redactString(value) {
+  let redacted = value;
+  for (const pattern of SENSITIVE_VALUE_PATTERNS) {
+    redacted = redacted.replace(pattern, (match) => {
+      if (/^bearer\s+/i.test(match)) {
+        return "Bearer [REDACTED]";
+      }
+      return REDACTED;
+    });
+  }
+  return redacted;
+}
+
+export function redactForLogs(value, seen = new WeakSet()) {
+  if (typeof value === "string") {
+    return redactString(value);
+  }
+
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value !== "object") {
+    return value;
+  }
+
+  if (seen.has(value)) {
+    return "[Circular]";
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactForLogs(entry, seen));
+  }
+
+  const redacted = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (SENSITIVE_KEY_PATTERN.test(key)) {
+      redacted[key] = REDACTED;
+      continue;
+    }
+    redacted[key] = redactForLogs(entry, seen);
+  }
+  return redacted;
+}
 
 function ok(data) {
-  console.log(JSON.stringify({ ok: true, ...data }));
+  console.log(JSON.stringify(redactForLogs({ ok: true, ...data })));
 }
 
 function fail(error, raw) {
-  console.error(JSON.stringify({ ok: false, error, ...(raw ? { raw } : {}) }));
+  console.error(JSON.stringify(redactForLogs({ ok: false, error, ...(raw ? { raw } : {}) })));
   process.exit(1);
 }
 
@@ -45,12 +98,66 @@ function usage(exitCode = 0) {
   process.exit(exitCode);
 }
 
-function getApiKey() {
-  const key = process.env.RAVEN_API_KEY;
-  if (!key) {
-    fail("RAVEN_API_KEY is not set. Configure it in your skill environment.");
+function formatMode(mode) {
+  return `0${(mode & 0o777).toString(8)}`;
+}
+
+export function readApiKeyFromFile(filePath) {
+  const resolvedPath = `${filePath || ""}`.trim();
+  if (!resolvedPath) {
+    throw new Error("RAVEN_API_KEY_FILE is empty.");
   }
+
+  let stats;
+  try {
+    stats = statSync(resolvedPath);
+  } catch {
+    throw new Error(`Unable to read RAVEN_API_KEY_FILE at ${resolvedPath}.`);
+  }
+
+  if (!stats.isFile()) {
+    throw new Error(`RAVEN_API_KEY_FILE must point to a regular file: ${resolvedPath}`);
+  }
+
+  const mode = stats.mode & 0o777;
+  if ((mode & 0o077) !== 0) {
+    throw new Error(`RAVEN_API_KEY_FILE permissions are too broad (${formatMode(mode)}). Run chmod 600 ${resolvedPath}.`);
+  }
+
+  const key = readFileSync(resolvedPath, "utf8").trim();
+  if (!key) {
+    throw new Error(`RAVEN_API_KEY_FILE is empty: ${resolvedPath}`);
+  }
+
   return key;
+}
+
+export function resolveApiKey(env = process.env) {
+  const apiKeyFile = `${env.RAVEN_API_KEY_FILE || ""}`.trim();
+  if (apiKeyFile) {
+    return readApiKeyFromFile(apiKeyFile);
+  }
+
+  const key = `${env.RAVEN_API_KEY || ""}`.trim();
+  if (!key) {
+    throw new Error("RAVEN_API_KEY is not set. Set RAVEN_API_KEY or RAVEN_API_KEY_FILE in the skill runtime.");
+  }
+
+  return key;
+}
+
+function getApiKey() {
+  if (cachedApiKey) {
+    return cachedApiKey;
+  }
+
+  try {
+    cachedApiKey = resolveApiKey();
+  } catch (error) {
+    fail(error?.message || "Unable to resolve Raven API key");
+  }
+
+  return cachedApiKey;
 }
 
 function getRequired(values, names, cmd) {
