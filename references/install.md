@@ -71,6 +71,7 @@ Run from the skill folder:
 
 ```bash
 node ./scripts/raven-transfer.mjs --help
+node ./scripts/validate-skill-package.mjs
 node --test ./tests/unit-normalizers.test.mjs
 node --test ./tests/contract-live.test.mjs
 ```

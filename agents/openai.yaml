@@ -4,9 +4,10 @@ interface:
   default_prompt: "Use $raven-transfer to check wallet balance, resolve recipient account details, and execute a confirmed NGN transfer."
 requirements:
   environment:
+    required:
+      - "RAVEN_API_KEY_FILE or RAVEN_API_KEY"
+    primary: "RAVEN_API_KEY_FILE"
     optional:
-      - "RAVEN_API_KEY"
-      - "RAVEN_API_KEY_FILE"
       - "RAVEN_API_BASE"
       - "RAVEN_TIMEOUT_MS"
       - "RAVEN_READ_RETRIES"

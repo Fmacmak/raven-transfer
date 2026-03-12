@@ -25,7 +25,9 @@ All command outputs are JSON with a success/failure envelope.
 ## Requirements
 
 - Node.js 18+
-- `RAVEN_API_KEY` in your environment
+- One auth source in your environment:
+  - `RAVEN_API_KEY_FILE` (preferred, points to a `chmod 600` or `chmod 400` file)
+  - `RAVEN_API_KEY`
 
 Optional environment variables:
 
@@ -38,9 +40,18 @@ Optional environment variables:
 ## Quick start
 
 ```bash
-export RAVEN_API_KEY="your_raven_api_key_here"
+mkdir -p "$HOME/.config/raven"
+printf '%s\n' "your_raven_api_key_here" > "$HOME/.config/raven/raven_api_key"
+chmod 600 "$HOME/.config/raven/raven_api_key"
+export RAVEN_API_KEY_FILE="$HOME/.config/raven/raven_api_key"
 node ./scripts/raven-transfer.mjs --help
 node ./scripts/raven-transfer.mjs --cmd=balance
+```
+
+Fallback (direct env injection):
+
+```bash
+export RAVEN_API_KEY="your_raven_api_key_here"
 ```
 
 ## Safe payout flow
@@ -57,6 +68,7 @@ node ./scripts/raven-transfer.mjs --cmd=balance
 ## Testing
 
 ```bash
+node ./scripts/validate-skill-package.mjs
 node --test ./tests/unit-normalizers.test.mjs
 node --test ./tests/contract-live.test.mjs
 ```

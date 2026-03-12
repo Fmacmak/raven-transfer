@@ -7,6 +7,13 @@ description: Wallet-aware Raven Atlas transfer operations for NGN payouts. Use w
 
 Execute safe NGN payouts through Raven Atlas.
 
+## Package artifacts
+
+- `scripts/raven-transfer.mjs` (transfer CLI implementation)
+- `agents/openai.yaml` (runtime metadata and env requirements)
+- `references/*.md` (workflow, command contract, safety, install)
+- `tests/*.test.mjs` (unit and live-contract checks)
+
 ## Use this skill process
 
 1. Identify payout target type: `bank` or `merchant`.
